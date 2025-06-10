@@ -1,0 +1,98 @@
+require 'net/http'
+require 'json'
+
+model = Sketchup.active_model
+entities = model.entities
+materials = model.materials
+definitions = model.definitions
+
+uri = URI('http://localhost:3000/api/dashboard/ocupacion-por-clase')
+response = Net::HTTP.get(uri)
+data = JSON.parse(response)
+
+altura_max = 30.0
+
+# Mapeo de componentes y textos
+componentes = {
+  "Clase I" => "OcupacionClaseI",
+  "Clase II" => "OcupacionClaseII",
+  "Clase III" => "OcupacionClaseIII"
+}
+etiquetas = {
+  "Clase I" => "PorcentajeClaseeI",
+  "Clase II" => "PorcentajeClaseeII",
+  "Clase III" => "PorcentajeClaseeIII"
+}
+posiciones = {
+  "Clase I" => [10300.28, 15564.38],
+  "Clase II" => [10285.57, 19608.58],
+  "Clase III" => [14222.22, 16136.35]
+}
+
+# Procesar cada clase sin eliminar la geometría base
+componentes.each do |clase, nombre_comp|
+  begin
+    row = data.find { |d| d["clase"] == clase }
+    next unless row
+
+    porcentaje = row["porcentaje_ocupacion"].to_f
+    altura = (porcentaje / 100.0) * altura_max
+
+    instancia = entities.find { |e| e.is_a?(Sketchup::ComponentInstance) && e.definition.name == nombre_comp }
+    next unless instancia
+
+    base_face = instancia.definition.entities.grep(Sketchup::Face).find { |f| f.normal.samedirection?(Z_AXIS) }
+    if base_face
+      base_face.pushpull(altura)
+    else
+      puts "⚠️ No se encontró cara base para #{clase}"
+    end
+
+    # Actualizar texto porcentaje
+    etiqueta = etiquetas[clase]
+    defn_txt = definitions[etiqueta]
+    if defn_txt
+      defn_txt.entities.clear!
+      defn_txt.entities.add_3d_text(
+        "#{porcentaje.round(2)} %",
+        TextAlignCenter,
+        "Arial Black", false, false,
+        1.5, 0.0, 3.0, false, 0.0
+      )
+    end
+  rescue => e
+    puts "❌ Error en #{clase}: #{e.message}"
+  end
+end
+
+# Texto total ocupadas y disponibles
+begin
+  total = data.find { |d| d["clase"] == "TOTAL" }
+  raise "No se encontró TOTAL" unless total
+
+  ocupadas = total["ocupadas"].to_i
+  disponibles = total["disponibles"].to_i
+
+  textos_globales = {
+    "CantidadTotal2" => ocupadas.to_s,
+    "DisponibilidadTotal2" => disponibles.to_s
+  }
+
+  textos_globales.each do |nombre, texto|
+    defn = definitions[nombre]
+    instancia = entities.find { |e| e.is_a?(Sketchup::ComponentInstance) && e.definition.name == nombre }
+
+    if defn && instancia
+      defn.entities.clear!
+      defn.entities.add_3d_text(
+        texto,
+        TextAlignLeft, "Arial Black", false, false,
+        1.5, 0.0, 3.0, false, 0.0
+      )
+    else
+      puts "❌ No se encontró definición o instancia para #{nombre}"
+    end
+  end
+rescue => e
+  puts "❌ Error actualizando textos globales: #{e.message}"
+end
