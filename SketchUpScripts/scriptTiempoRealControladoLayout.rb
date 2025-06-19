@@ -16,10 +16,7 @@ if $dashboard_timer
 else
   puts "Activando actualización automática de dashboards cada 5 segundos..."
   $dashboard_timer = UI.start_timer(5, true) do
-    ejecutar_script("scriptDashboard1.rb")
-    ejecutar_script("scriptDashboard2.rb")
-    ejecutar_script("scriptDashboard3.rb")
-    ejecutar_script("scriptDashboard4.rb")
+    ejecutar_script("scriptMontacargas.rb")
     puts "🔄 Datos actualizados #{Time.now.strftime('%H:%M:%S')}"
   end
 end
