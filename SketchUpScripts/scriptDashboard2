@@ -6,7 +6,7 @@ entities = model.entities
 materials = model.materials
 definitions = model.definitions
 
-uri = URI('http://localhost:3000/api/dashboard/ocupacion-por-clase')
+uri = URI('http://64.23.225.99:3000/api/dashboard/ocupacion-por-clase')
 response = Net::HTTP.get(uri)
 data = JSON.parse(response)
 

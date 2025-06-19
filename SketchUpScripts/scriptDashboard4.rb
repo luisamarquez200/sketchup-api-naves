@@ -8,7 +8,7 @@ definitions = model.definitions
 
 # 1. API: Entradas y salidas por semana
 begin
-  uri = URI('http://localhost:3000/api/dashboard/ocupacion-semanal')
+  uri = URI('http://64.23.225.99:3000/api/dashboard/ocupacion-semanal')
   response = Net::HTTP.get(uri)
   data = JSON.parse(response)
 rescue => e

@@ -6,7 +6,7 @@ entities = model.entities
 materials = model.materials
 
 begin
-  uri = URI('http://localhost:3000/api/dashboard/ocupacion-global')
+  uri = URI('http://64.23.225.99:3000/api/dashboard/ocupacion-global')
   response = Net::HTTP.get(uri)
   data = JSON.parse(response)
 rescue => e

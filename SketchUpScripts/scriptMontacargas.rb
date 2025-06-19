@@ -18,7 +18,7 @@ cuadrantes.each do |letra|
   nombre_cuadrante = "Cuadrante #{letra}"
   encoded_nombre = nombre_cuadrante.gsub(' ', '%20')  # ✅ Corrige espacios
 
-  url = URI.parse("http://localhost:3000/api/cuadrantes/#{encoded_nombre}")
+  url = URI.parse("http://64.23.225.99:3000/api/cuadrantes/#{encoded_nombre}")
 
   begin
     response = Net::HTTP.get_response(url)
