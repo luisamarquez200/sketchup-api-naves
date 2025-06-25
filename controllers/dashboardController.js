@@ -1,6 +1,6 @@
 const db = require('../db/connection');
 
-exports.getOcupacionGlobal = (req, res) => {
+exports.getOcupacionGlobal = async (req, res) => {
   const query = `
     SELECT 
       COUNT(*) AS total,
@@ -9,8 +9,8 @@ exports.getOcupacionGlobal = (req, res) => {
     FROM sub_ubicaciones;
   `;
 
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const [results] = await db.query(query);
 
     const { total, ocupadas, libres } = results[0];
     const porcentaje_ocupado = ((ocupadas / total) * 100).toFixed(2);
@@ -23,10 +23,13 @@ exports.getOcupacionGlobal = (req, res) => {
       porcentaje_ocupado: parseFloat(porcentaje_ocupado),
       porcentaje_libre: parseFloat(porcentaje_libre)
     });
-  });
+  } catch (err) {
+    console.error('❌ Error en getOcupacionGlobal:', err);
+    res.status(500).json({ error: err.message });
+  }
 };
 
-exports.getOcupacionPorClase = (req, res) => {
+exports.getOcupacionPorClase = async (req, res) => {
   const query = `
     SELECT 
       u.Clase AS clase,
@@ -38,13 +41,12 @@ exports.getOcupacionPorClase = (req, res) => {
     GROUP BY u.Clase
   `;
 
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const [results] = await db.query(query);
 
     let total_acum = 0;
     let ocupadas_acum = 0;
 
-    // Convertir cada campo a número explícitamente
     const converted = results.map(row => {
       const total = Number(row.total);
       const ocupadas = Number(row.ocupadas);
@@ -75,10 +77,13 @@ exports.getOcupacionPorClase = (req, res) => {
     });
 
     res.json(converted);
-  });
+  } catch (err) {
+    console.error('❌ Error en getOcupacionPorClase:', err);
+    res.status(500).json({ error: err.message });
+  }
 };
 
-exports.getEntradasSalidasPorSemana = (req, res) => {
+exports.getEntradasSalidasPorSemana = async (req, res) => {
   const query = `
     SELECT 
       YEAR(fecha_entrada) AS anio,
@@ -91,9 +96,11 @@ exports.getEntradasSalidasPorSemana = (req, res) => {
     ORDER BY anio DESC, semana DESC
   `;
 
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const [results] = await db.query(query);
     res.json(results);
-  });
+  } catch (err) {
+    console.error('❌ Error en getEntradasSalidasPorSemana:', err);
+    res.status(500).json({ error: err.message });
+  }
 };
-
