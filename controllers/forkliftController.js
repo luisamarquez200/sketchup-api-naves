@@ -1,7 +1,7 @@
 const db = require('../db/connection');
 
 // Obtener todas las sububicaciones de un cuadrante específico
-exports.getSububicacionesByCuadrante = (req, res) => {
+exports.getSububicacionesByCuadrante = async (req, res) => {
   const cuadrante = req.params.nombre;
 
   const query = `

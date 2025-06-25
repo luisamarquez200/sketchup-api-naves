@@ -86,8 +86,10 @@ begin
       defn.entities.clear!
       defn.entities.add_3d_text(
         texto,
-        TextAlignLeft, "Arial Black", false, false,
-        1.5, 0.0, 3.0, false, 0.0
+        TextAlignLeft, "Arial Black",
+        false, false,
+        1.8, 0.0, 1.0,
+        false, 0.0
       )
     else
       puts "❌ No se encontró definición o instancia para #{nombre}"

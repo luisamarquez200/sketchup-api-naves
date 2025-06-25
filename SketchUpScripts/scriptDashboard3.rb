@@ -28,9 +28,9 @@ def ancho_base(nombre_componente)
   10000.0
 end
 
-ancho_max = ancho_base("BarraClaseI")
-altura_max = 300.0
-profundidad = 650.0
+ancho_max = ancho_max = ancho_base("BarraClaseI") * 2.5
+altura_max = 400.0
+profundidad = 1200.0
 
 entities.grep(Sketchup::Group).select { |g| g.name.start_with?("BarraAzul_") }.each(&:erase!)
 
@@ -100,7 +100,7 @@ data.each do |row|
   texto,
   TextAlignLeft,
   "Arial Black", false, false,
-  1.2, 0.0, 3.0, false, 0.0
+  1.5, 0.0, 3.0, false, 0.0
 )
 
     end

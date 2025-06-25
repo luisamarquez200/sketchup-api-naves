@@ -24,7 +24,7 @@ exports.getOcupacionGlobal = async (req, res) => {
       porcentaje_libre: parseFloat(porcentaje_libre)
     });
   } catch (err) {
-    console.error('❌ Error en getOcupacionGlobal:', err);
+    console.error('Error en getOcupacionGlobal:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -78,7 +78,7 @@ exports.getOcupacionPorClase = async (req, res) => {
 
     res.json(converted);
   } catch (err) {
-    console.error('❌ Error en getOcupacionPorClase:', err);
+    console.error('Error en getOcupacionPorClase:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -100,7 +100,7 @@ exports.getEntradasSalidasPorSemana = async (req, res) => {
     const [results] = await db.query(query);
     res.json(results);
   } catch (err) {
-    console.error('❌ Error en getEntradasSalidasPorSemana:', err);
+    console.error('Error en getEntradasSalidasPorSemana:', err);
     res.status(500).json({ error: err.message });
   }
 };
