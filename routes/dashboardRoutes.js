@@ -5,5 +5,7 @@ const dashboardController = require('../controllers/dashboardController');
 router.get('/ocupacion-global', dashboardController.getOcupacionGlobal);
 router.get('/ocupacion-por-clase', dashboardController.getOcupacionPorClase);
 router.get('/ocupacion-semanal', dashboardController.getEntradasSalidasPorSemana);
+router.get('/permanencia-12-semanas', dashboardController.getEquiposMas12SemanasPorClase);
+router.get('/permanencia-18-semanas', dashboardController.getEquiposMas18SemanasPorClase);
 
 module.exports = router;

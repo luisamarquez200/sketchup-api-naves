@@ -104,3 +104,57 @@ exports.getEntradasSalidasPorSemana = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+exports.getEquiposMas12SemanasPorClase = async (req, res) => {
+  const query = `
+    SELECT 
+      u.Clase AS clase,
+      COUNT(eu.id_equipos) AS cantidad,
+      ROUND(COUNT(eu.id_equipos) * 100.0 / (
+        SELECT COUNT(*) FROM equipo_ubicacion 
+        WHERE DATEDIFF(CURDATE(), fecha_entrada) > 12 * 7
+      ), 2) AS porcentaje
+    FROM equipo_ubicacion eu
+    JOIN sub_ubicaciones su ON eu.id_sub_ubicacion = su.id_sub_ubicacion
+    JOIN ubicacion u ON su.id_ubicacion = u.id_ubicacion
+    WHERE DATEDIFF(CURDATE(), eu.fecha_entrada) > 12 * 7
+    GROUP BY u.Clase;
+  `;
+
+  try {
+    const [results] = await db.query(query);
+    res.json(results);
+  } catch (err) {
+    console.error('Error en getEquiposMas12SemanasPorClase:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getEquiposMas18SemanasPorClase = async (req, res) => {
+  const query = `
+    SELECT 
+      u.Clase AS clase,
+      COUNT(eu.id_equipos) AS cantidad_mayores_18,
+      ROUND(
+        COUNT(eu.id_equipos) * 100.0 / 
+        (
+          SELECT COUNT(*) 
+          FROM equipo_ubicacion eu2
+          JOIN sub_ubicaciones su2 ON eu2.id_sub_ubicacion = su2.id_sub_ubicacion
+          JOIN ubicacion u2 ON su2.id_ubicacion = u2.id_ubicacion
+          WHERE u2.Clase = u.Clase
+        ), 2
+      ) AS porcentaje
+    FROM equipo_ubicacion eu
+    JOIN sub_ubicaciones su ON eu.id_sub_ubicacion = su.id_sub_ubicacion
+    JOIN ubicacion u ON su.id_ubicacion = u.id_ubicacion
+    WHERE DATEDIFF(CURDATE(), eu.fecha_entrada) > 18 * 7
+    GROUP BY u.Clase;
+  `;
+
+  try {
+    const [results] = await db.query(query);
+    res.json(results);
+  } catch (err) {
+    console.error('Error en getEquiposMas18SemanasPorClase:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
