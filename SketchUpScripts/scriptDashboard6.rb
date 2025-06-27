@@ -6,9 +6,9 @@ entities = model.entities
 materials = model.materials
 
 # === PARÁMETROS DE CONFIGURACIÓN ===
-altura_max = 10000.0
+altura_max = 5000.0
 altura_minima = 100.0
-y_base_visual = -19000.0
+y_base_visual = -6900.0
 
 # Coordenadas por clase
 coordenadas = {
@@ -17,9 +17,8 @@ coordenadas = {
   "Clase III" => { x: 15212.99, z: 547.71, color: [255, 140, 100] }
 }
 
-# === CONSULTAR API ===
 begin
-  uri = URI('http://localhost:3000/api/dashboard/permanencia-18-semanas')
+  uri = URI('http://64.23.225.99:3000/api/dashboard/permanencia-18-semanas')
   response = Net::HTTP.get(uri)
   data = JSON.parse(response)
 rescue => e
@@ -27,7 +26,6 @@ rescue => e
   data = []
 end
 
-# === RESETEAR ALTURAS Y POSICIONES DE COMPONENTES ===
 coordenadas.each_key do |clase|
   name = "BarraOcupada#{clase.gsub(" ", "")}"
   instancia = entities.grep(Sketchup::ComponentInstance).find { |c| c.name == name }
@@ -35,25 +33,27 @@ coordenadas.each_key do |clase|
 
   matching = data.find { |d| d["clase"] == clase }
   porcentaje = matching ? matching["porcentaje"].to_f : 0.0
-
   nueva_altura = [(porcentaje / 100.0) * altura_max, altura_minima].max
 
-  # Obtener altura original del componente
-  bbox = instancia.definition.bounds
-  altura_original = bbox.height
-  escala_y = nueva_altura / altura_original
+  # ALTURA ACTUAL YA TRANSFORMADA
+  bbox = instancia.bounds
+  altura_actual = bbox.height
+  base_actual = bbox.min
 
-  # Posición final
-  destino = Geom::Point3d.new(coordenadas[clase][:x], y_base_visual, coordenadas[clase][:z])
+  escala_y = nueva_altura / altura_actual
 
-  # Escalar desde el centro del componente
-  centro = bbox.center
-  t_centro_neg = Geom::Transformation.translation(centro.vector_to(ORIGIN))
-  t_escala = Geom::Transformation.scaling(ORIGIN, 1, escala_y, 1)
-  t_centro_pos = Geom::Transformation.translation(ORIGIN.vector_to(centro))
-  t_mover = Geom::Transformation.translation(destino)
+  puts "Clase: #{clase} | Porcentaje: #{porcentaje} | Altura actual: #{altura_actual} | Escala Y: #{escala_y}"
 
-  instancia.transformation = t_centro_neg * t_escala * t_centro_pos * t_mover
+  # Escalar desde la base
+  t1 = Geom::Transformation.translation(base_actual.vector_to(ORIGIN))
+  t2 = Geom::Transformation.scaling(ORIGIN, 1, escala_y, 1)
+  t3 = Geom::Transformation.translation(ORIGIN.vector_to(base_actual))
+  instancia.transform!(t1 * t2 * t3)
+
+  # Ajustar altura base a y_base_visual
+  nueva_base = instancia.bounds.min
+  delta_y = y_base_visual - nueva_base.y
+  instancia.transform!(Geom::Transformation.translation([0, delta_y, 0]))
 
   # Aplicar color
   mat_name = "Color_#{name}"
@@ -62,7 +62,6 @@ coordenadas.each_key do |clase|
   instancia.material = material
 end
 
-# === ACTUALIZAR TEXTOS ===
 coordenadas.each_key do |clase|
   texto_nombre = "BarraTexto#{clase.gsub(" ", "")}"
   matching = data.find { |d| d["clase"] == clase }
@@ -73,7 +72,6 @@ coordenadas.each_key do |clase|
   definition = model.definitions[texto_nombre]
   next unless definition
 
-  # Borrar texto anterior y agregar nuevo
   definition.entities.clear!
   definition.entities.add_3d_text(
     texto,

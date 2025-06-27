@@ -4,97 +4,81 @@ require 'json'
 model = Sketchup.active_model
 entities = model.entities
 materials = model.materials
-definitions = model.definitions
 
+# 1. API: obtener datos de ocupación por clase
 uri = URI('http://64.23.225.99:3000/api/dashboard/ocupacion-por-clase')
 response = Net::HTTP.get(uri)
 data = JSON.parse(response)
 
-altura_max = 30.0
+# 2. Filtrar solo Clases I, II y III
+clases_objetivo = ["Clase I", "Clase II", "Clase III"]
+clases = data.select { |d| clases_objetivo.include?(d["clase"]) }
 
-# Mapeo de componentes y textos
-componentes = {
-  "Clase I" => "OcupacionClaseI",
-  "Clase II" => "OcupacionClaseII",
-  "Clase III" => "OcupacionClaseIII"
-}
-etiquetas = {
-  "Clase I" => "PorcentajeClaseeI",
-  "Clase II" => "PorcentajeClaseeII",
-  "Clase III" => "PorcentajeClaseeIII"
-}
-posiciones = {
-  "Clase I" => [10300.28, 15564.38],
-  "Clase II" => [10285.57, 19608.58],
-  "Clase III" => [14222.22, 16136.35]
+# 3. Parámetros del círculo
+centro = [0, 0, 0]
+radio = 3000.0
+segmentos = 72  # Cuantos más, más suave
+angulo_total = 0.0
+
+# 4. Colores asignados
+colores = {
+  "Clase I" => [255, 0, 0],      # rojo
+  "Clase II" => [0, 255, 255],   # cian
+  "Clase III" => [255, 255, 0]   # amarillo
 }
 
-# Procesar cada clase sin eliminar la geometría base
-componentes.each do |clase, nombre_comp|
-  begin
-    row = data.find { |d| d["clase"] == clase }
-    next unless row
-
-    porcentaje = row["porcentaje_ocupacion"].to_f
-    altura = (porcentaje / 100.0) * altura_max
-
-    instancia = entities.find { |e| e.is_a?(Sketchup::ComponentInstance) && e.definition.name == nombre_comp }
-    next unless instancia
-
-    base_face = instancia.definition.entities.grep(Sketchup::Face).find { |f| f.normal.samedirection?(Z_AXIS) }
-    if base_face
-      base_face.pushpull(altura)
-    else
-      puts "⚠️ No se encontró cara base para #{clase}"
-    end
-
-    # Actualizar texto porcentaje
-    etiqueta = etiquetas[clase]
-    defn_txt = definitions[etiqueta]
-    if defn_txt
-      defn_txt.entities.clear!
-      defn_txt.entities.add_3d_text(
-        "#{porcentaje.round(2)} %",
-        TextAlignCenter,
-        "Arial Black", false, false,
-        1.5, 0.0, 3.0, false, 0.0
-      )
-    end
-  rescue => e
-    puts "❌ Error en #{clase}: #{e.message}"
-  end
+# 5. Eliminar cualquier geometría anterior con nombre conocido
+["Sector_Clase I", "Sector_Clase II", "Sector_Clase III"].each do |nombre|
+  entities.grep(Sketchup::Group).select { |g| g.name == nombre }.each(&:erase!)
 end
 
-# Texto total ocupadas y disponibles
-begin
-  total = data.find { |d| d["clase"] == "TOTAL" }
-  raise "No se encontró TOTAL" unless total
+# 6. Calcular ángulos proporcionales y dibujar sectores
+clases.each do |clase_data|
+  clase = clase_data["clase"]
+  porcentaje = clase_data["porcentaje_ocupacion"].to_f
+  angulo = 360.0 * (porcentaje / 100.0)
 
-  ocupadas = total["ocupadas"].to_i
-  disponibles = total["disponibles"].to_i
+  pasos = ((segmentos * angulo) / 360.0).round
+  angulo_rad = angulo * Math::PI / 180.0
+  inicio = angulo_total * Math::PI / 180.0
 
-  textos_globales = {
-    "CantidadTotal2" => ocupadas.to_s,
-    "DisponibilidadTotal2" => disponibles.to_s
-  }
-
-  textos_globales.each do |nombre, texto|
-    defn = definitions[nombre]
-    instancia = entities.find { |e| e.is_a?(Sketchup::ComponentInstance) && e.definition.name == nombre }
-
-    if defn && instancia
-      defn.entities.clear!
-      defn.entities.add_3d_text(
-        texto,
-        TextAlignLeft, "Arial Black",
-        false, false,
-        1.8, 0.0, 1.0,
-        false, 0.0
-      )
-    else
-      puts "❌ No se encontró definición o instancia para #{nombre}"
-    end
+  puntos = [centro]
+  pasos.times do |i|
+    a = inicio + (i.to_f / pasos.to_f) * angulo_rad
+    puntos << [
+      centro[0] + Math.cos(a) * radio,
+      centro[1] + Math.sin(a) * radio,
+      0
+    ]
   end
-rescue => e
-  puts "❌ Error actualizando textos globales: #{e.message}"
+
+  group = entities.add_group
+  face = group.entities.add_face(puntos)
+  face.reverse! if face.normal.z < 0
+  group.name = "Sector_#{clase}"
+
+  # Aplicar color
+  color = colores[clase]
+  mat = materials["Color_#{clase}"] || materials.add("Color_#{clase}")
+  mat.color = Sketchup::Color.new(*color)
+  group.material = mat
+  group.entities.each { |e| e.material = mat if e.respond_to?(:material=) }
+
+  # Texto de porcentaje en el centro del sector
+  angulo_mitad = inicio + (angulo_rad / 2.0)
+  texto_x = centro[0] + Math.cos(angulo_mitad) * (radio * 0.5)
+  texto_y = centro[1] + Math.sin(angulo_mitad) * (radio * 0.5)
+
+  texto_group = entities.add_group
+  texto_group.name = "Texto_#{clase}"
+  texto_group.entities.add_3d_text(
+    "#{porcentaje.round(2)} %",
+    TextAlignCenter, "Arial Black",
+    false, false,
+    2.0, 0.0, 1.0,
+    false, 0.0
+  )
+  texto_group.transform!(Geom::Transformation.translation([texto_x, texto_y, 0]))
+
+  angulo_total += angulo
 end
