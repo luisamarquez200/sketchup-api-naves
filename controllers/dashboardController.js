@@ -2,11 +2,13 @@ const db = require('../db/connection');
 
 exports.getOcupacionGlobal = async (req, res) => {
   const query = `
-    SELECT 
-      COUNT(*) AS total,
-      SUM(CASE WHEN ubicacion_ocupada = 1 THEN 1 ELSE 0 END) AS ocupadas,
-      SUM(CASE WHEN ubicacion_ocupada = 0 THEN 1 ELSE 0 END) AS libres
-    FROM sub_ubicaciones;
+  SELECT 
+  COUNT(*) AS total,
+  SUM(CASE WHEN s.ubicacion_ocupada = 1 THEN 1 ELSE 0 END) AS ocupadas,
+  SUM(CASE WHEN s.ubicacion_ocupada = 0 THEN 1 ELSE 0 END) AS libres
+FROM sub_ubicaciones s
+JOIN ubicacion u ON s.id_ubicacion = u.id_ubicacion
+WHERE u.Clase != 'Accesorio';
   `;
 
   try {
