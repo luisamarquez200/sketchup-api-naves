@@ -1,0 +1,61 @@
+name: Deploy
+
+on:
+  pull_request:
+    branches: [mian]
+
+jobs:
+  Deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: SSH Deploy
+        env:
+          PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOST_NAME: ${{ secrets.SSH_HOST }}
+          USER_NAME: ${{ secrets.USER_NAME }}
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+          GIT_REPO: ${{ secrets.GIT_REPO }}
+        run: |
+          # Verificar variables requeridas
+          if [ -z "$PRIVATE_KEY" ] || [ -z "$HOST_NAME" ] || [ -z "$USER_NAME" ] || [ -z "$PROJECT_PATH" ] || [ -z "$GIT_REPO" ]; then
+            echo "❌ Error: Missing required environment variables"
+            exit 1
+          fi
+
+          # Configurar SSH
+          mkdir -p ~/.ssh
+          echo "$PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Añadir host a known_hosts con manejo de errores
+          ssh-keyscan -H "$HOST_NAME" >> ~/.ssh/known_hosts 2>/dev/null || echo "⚠️  Warning: ssh-keyscan failed"
+
+          # Configurar StrictHostKeyChecking
+          echo -e "Host $HOST_NAME\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
+
+          # Comandos de despliegue
+          ssh -i ~/.ssh/deploy_key "$USER_NAME@$HOST_NAME" <<EOF
+            set -e  # Salir en caso de error
+            
+            if [ ! -d "$PROJECT_PATH/.git" ]; then
+              echo "⚙️  Clonando repositorio..."
+              mkdir -p \$(dirname "$PROJECT_PATH")
+              git clone "$GIT_REPO" "$PROJECT_PATH"
+            fi
+
+            echo "🔄 Actualizando código..."
+            cd "$PROJECT_PATH"
+            git checkout main
+            git fetch --all
+            git reset --hard origin/main
+            git pull origin main
+            echo "✅ Código actualizado"
+
+            sudo systemctl reload nginx
+            sudo nginx -t
+
+            echo "✅ Despliegue completado"
+          EOF
