@@ -40,17 +40,4 @@ jobs:
           ssh -i ~/.ssh/deploy_key "$USER_NAME@$HOST_NAME" <<EOF
             set -e  # Salir en caso de error
             
-            if [ ! -d "$PROJECT_PATH/.git" ]; then
-              echo "⚙️  Clonando repositorio..."
-              mkdir -p \$(dirname "$PROJECT_PATH")
-              git clone "$GIT_REPO" "$PROJECT_PATH"
-            fi
-
-            echo "🔄 Actualizando código..."
-            cd "$PROJECT_PATH"
-            git checkout main
-            git fetch --all
-            git reset --hard origin/main
-            git pull origin main
-            echo "✅ Despliegue completado"
           EOF
