@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   pull_request:
-    branches: [main]
+    branches: [develop]
 
 jobs:
   Deploy:
@@ -28,8 +28,8 @@ jobs:
           # Configurar SSH
           mkdir -p ~/.ssh
           echo "$PRIVATE_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key        
-          
+          chmod 600 ~/.ssh/deploy_key
+
           # Añadir host a known_hosts con manejo de errores
           ssh-keyscan -H "$HOST_NAME" >> ~/.ssh/known_hosts 2>/dev/null || echo "⚠️  Warning: ssh-keyscan failed"
 
@@ -48,14 +48,10 @@ jobs:
 
             echo "🔄 Actualizando código..."
             cd "$PROJECT_PATH"
-            git checkout main
+            git checkout develop
             git fetch --all
-            git reset --hard origin/main
-            git pull origin main
-            echo "✅ Código actualizado"
-
-            sudo systemctl reload nginx
-            sudo nginx -t
-
+            git reset --hard origin/develop
+            git pull origin develop
             echo "✅ Despliegue completado"
+
           EOF
