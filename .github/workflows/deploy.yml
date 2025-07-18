@@ -28,6 +28,7 @@ jobs:
           # Configurar SSH
           mkdir -p ~/.ssh
           echo "$PRIVATE_KEY" > ~/.ssh/deploy_key
+          mkdir -p ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
           # Añadir host a known_hosts con manejo de errores
