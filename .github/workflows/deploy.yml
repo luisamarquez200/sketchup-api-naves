@@ -29,7 +29,10 @@ jobs:
           mkdir -p ~/.ssh
           echo "$PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-                    
+          
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/deploy_key         
+          
           # Añadir host a known_hosts con manejo de errores
           ssh-keyscan -H "$HOST_NAME" >> ~/.ssh/known_hosts 2>/dev/null || echo "⚠️  Warning: ssh-keyscan failed"
 
