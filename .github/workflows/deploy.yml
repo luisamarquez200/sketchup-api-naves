@@ -29,7 +29,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-
+                    
           # Añadir host a known_hosts con manejo de errores
           ssh-keyscan -H "$HOST_NAME" >> ~/.ssh/known_hosts 2>/dev/null || echo "⚠️  Warning: ssh-keyscan failed"
 
@@ -37,7 +37,7 @@ jobs:
           echo -e "Host $HOST_NAME\n\tStrictHostKeyChecking no\n" >> ~/.ssh/config
 
           # Comandos de despliegue
-          ssh -i ~/.ssh/id_rsa_deploy "$USER_NAME@$HOST_NAME" <<EOF
+          ssh -i ~/.ssh/deploy_key "$USER_NAME@$HOST_NAME" <<EOF
             set -e  # Salir en caso de error
             
             if [ ! -d "$PROJECT_PATH/.git" ]; then
