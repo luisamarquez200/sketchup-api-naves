@@ -1,7 +1,7 @@
 name: Deploy
 
 on:
-  pull_request:
+  push:
     branches: [main]
 
 jobs:
@@ -53,5 +53,4 @@ jobs:
             git reset --hard origin/main
             git pull origin main
             echo "✅ Despliegue completado"
-
           EOF
