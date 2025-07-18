@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [main]
 
 jobs:
   Deploy:
@@ -48,10 +48,10 @@ jobs:
 
             echo "🔄 Actualizando código..."
             cd "$PROJECT_PATH"
-            git checkout develop
+            git checkout main
             git fetch --all
-            git reset --hard origin/develop
-            git pull origin develop
+            git reset --hard origin/main
+            git pull origin main
             echo "✅ Despliegue completado"
 
           EOF
