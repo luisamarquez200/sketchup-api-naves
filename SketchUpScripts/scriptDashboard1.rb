@@ -21,10 +21,10 @@ rescue => e
 end
 
 # Parámetros visuales
-altura_max = 10000.0          # altura máxima en mm
-anchura = 600.0 * 4          # ancho aumentado ×3
-profundidad = 600.0 * 1      # profundidad aumentado ×3
-y_base_visual = 19400.0      # posición base común en eje Y
+altura_max = 10000.0         
+anchura = 600.0 * 4          
+profundidad = 600.0 * 1      
+y_base_visual = 19400.0     
 
 # Eliminar barras anteriores si existen
 ["BarraOcupada", "BarraLibres"].each do |nombre|

@@ -168,3 +168,60 @@ exports.getEquiposMas18SemanasPorClase = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+exports.getCantidadAccesoriosPorTipo = async (req, res) => {
+  const query = `
+    SELECT 
+      tipo,
+      COUNT(*) AS cantidad
+    FROM entrada_accesorios
+    GROUP BY tipo
+    ORDER BY cantidad DESC;
+  `;
+
+  try {
+    const [results] = await db.query(query);
+    res.json(results);
+  } catch (err) {
+    console.error('Error en getCantidadAccesoriosPorTipo:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getCantidadEquiposPorUnidad = async (req, res) => {
+  const query = `
+    SELECT 
+      COALESCE(unidad_venta, 'SIN ASIGNAR') AS unidad_venta,
+      SUM(cantidad_equipos) AS cantidad
+    FROM Vista_equipos_unidad
+    GROUP BY unidad_venta
+    ORDER BY cantidad DESC;
+  `;
+
+  try {
+    const [results] = await db.query(query);
+    res.json(results);
+  } catch (err) {
+    console.error('Error en getCantidadEquiposPorUnidad:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+exports.getEquiposUnidadPorClase = async (req, res) => {
+  const query = `
+    SELECT 
+      COALESCE(unidad_venta, 'SIN ASIGNAR') AS unidad_venta,
+      SUM(equipos_clase_I) AS clase_I,
+      SUM(equipos_clase_II) AS clase_II,
+      SUM(equipos_clase_III) AS clase_III
+    FROM Vista_equipos_unidad
+    GROUP BY unidad_venta
+    ORDER BY unidad_venta;
+  `;
+
+  try {
+    const [results] = await db.query(query);
+    res.json(results);
+  } catch (err) {
+    console.error('Error en getEquiposUnidadPorClase:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
