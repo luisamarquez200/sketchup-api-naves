@@ -1,29 +1,30 @@
 const db = require('../db/connection');
 
+const CLASE_FILTER = "TRIM(UPPER(u.Clase)) <> 'ACCESORIO'";
+
 exports.getOcupacionGlobal = async (req, res) => {
   const query = `
-  SELECT 
-  COUNT(*) AS total,
-  SUM(CASE WHEN s.ubicacion_ocupada = 1 THEN 1 ELSE 0 END) AS ocupadas,
-  SUM(CASE WHEN s.ubicacion_ocupada = 0 THEN 1 ELSE 0 END) AS libres
-FROM sub_ubicaciones s
-JOIN ubicacion u ON s.id_ubicacion = u.id_ubicacion
-WHERE u.Clase != 'Accesorio';
+    SELECT 
+      COUNT(*) AS total,
+      SUM(CASE WHEN COALESCE(s.ubicacion_ocupada,0) = 1 THEN 1 ELSE 0 END) AS ocupadas,
+      SUM(CASE WHEN COALESCE(s.ubicacion_ocupada,0) = 0 THEN 1 ELSE 0 END) AS libres
+    FROM sub_ubicaciones s
+    JOIN ubicacion u ON s.id_ubicacion = u.id_ubicacion
+    WHERE ${CLASE_FILTER};
   `;
 
   try {
-    const [results] = await db.query(query);
+    const [rows] = await db.query(query);
+    const { total, ocupadas, libres } = rows[0];
+    const porcentaje_ocupado = total ? +( (ocupadas / total) * 100 ).toFixed(2) : 0;
+    const porcentaje_libre   = total ? +( (libres    / total) * 100 ).toFixed(2) : 0;
 
-    const { total, ocupadas, libres } = results[0];
-    const porcentaje_ocupado = ((ocupadas / total) * 100).toFixed(2);
-    const porcentaje_libre = ((libres / total) * 100).toFixed(2);
-
-    res.json({
-      total,
-      ocupadas,
-      libres,
-      porcentaje_ocupado: parseFloat(porcentaje_ocupado),
-      porcentaje_libre: parseFloat(porcentaje_libre)
+    res.json({ 
+      total: Number(total),
+      ocupadas: Number(ocupadas),
+      libres: Number(libres),
+      porcentaje_ocupado,
+      porcentaje_libre
     });
   } catch (err) {
     console.error('Error en getOcupacionGlobal:', err);
@@ -36,54 +37,66 @@ exports.getOcupacionPorClase = async (req, res) => {
     SELECT 
       u.Clase AS clase,
       COUNT(s.id_sub_ubicacion) AS total,
-      SUM(s.ubicacion_ocupada) AS ocupadas,
-      ROUND(SUM(s.ubicacion_ocupada) / COUNT(s.id_sub_ubicacion) * 100, 2) AS porcentaje_ocupacion
+      SUM(CASE WHEN COALESCE(s.ubicacion_ocupada,0) = 1 THEN 1 ELSE 0 END) AS ocupadas,
+      SUM(CASE WHEN COALESCE(s.ubicacion_ocupada,0) = 0 THEN 1 ELSE 0 END) AS disponibles,
+      ROUND(
+        SUM(CASE WHEN COALESCE(s.ubicacion_ocupada,0) = 1 THEN 1 ELSE 0 END) 
+        / COUNT(s.id_sub_ubicacion) * 100, 2
+      ) AS porcentaje_ocupacion
     FROM sub_ubicaciones s
     JOIN ubicacion u ON s.id_ubicacion = u.id_ubicacion
+    WHERE ${CLASE_FILTER}
     GROUP BY u.Clase
+    ORDER BY u.Clase;
   `;
 
   try {
-    const [results] = await db.query(query);
+    const [rows] = await db.query(query);
 
-    let total_acum = 0;
-    let ocupadas_acum = 0;
+    let total_acum = 0, ocupadas_acum = 0, disponibles_acum = 0;
 
-    const converted = results.map(row => {
-      const total = Number(row.total);
-      const ocupadas = Number(row.ocupadas);
-      const porcentaje = Number(row.porcentaje_ocupacion);
+    const detalle = rows.map(r => {
+      const total = Number(r.total);
+      const ocupadas = Number(r.ocupadas);
+      const disponibles = Number(r.disponibles);
+      const porcentaje_ocupacion = Number(r.porcentaje_ocupacion);
 
       total_acum += total;
       ocupadas_acum += ocupadas;
+      disponibles_acum += disponibles;
 
       return {
-        clase: row.clase,
+        clase: r.clase,
         total,
         ocupadas,
-        porcentaje_ocupacion: porcentaje
+        disponibles,
+        porcentaje_ocupacion
       };
     });
 
-    const disponibles_acum = total_acum - ocupadas_acum;
-    const porcentaje_acum = total_acum > 0 
-      ? parseFloat(((ocupadas_acum / total_acum) * 100).toFixed(2)) 
-      : 0;
+    const detalleConParticipacion = detalle.map(d => ({
+      ...d,
+      participacion: total_acum ? +((d.total / total_acum) * 100).toFixed(2) : 0
+    }));
 
-    converted.push({
+    const porcentaje_acum = total_acum ? +((ocupadas_acum / total_acum) * 100).toFixed(2) : 0;
+
+    detalleConParticipacion.push({
       clase: "TOTAL",
       total: total_acum,
       ocupadas: ocupadas_acum,
       disponibles: disponibles_acum,
-      porcentaje_ocupacion: porcentaje_acum
+      porcentaje_ocupacion: porcentaje_acum,
+      participacion: 100
     });
 
-    res.json(converted);
+    res.json(detalleConParticipacion);
   } catch (err) {
     console.error('Error en getOcupacionPorClase:', err);
     res.status(500).json({ error: err.message });
   }
 };
+
 
 exports.getEntradasSalidasPorSemana = async (req, res) => {
   const query = `
@@ -189,21 +202,25 @@ exports.getCantidadAccesoriosPorTipo = async (req, res) => {
 exports.getCantidadEquiposPorUnidad = async (req, res) => {
   const query = `
     SELECT 
-      COALESCE(unidad_venta, 'SIN ASIGNAR') AS unidad_venta,
-      SUM(cantidad_equipos) AS cantidad
-    FROM Vista_equipos_unidad
-    GROUP BY unidad_venta
+      COALESCE(v.unidad_venta, 'SIN ASIGNAR') AS unidad_venta,
+      CAST(SUM(v.cantidad_equipos) AS UNSIGNED) AS cantidad
+    FROM Vista_equipos_unidad v
+    WHERE COALESCE(TRIM(UPPER(v.clase)), '') NOT IN ('ACCESORIO','ACCESORIOS')
+    GROUP BY COALESCE(v.unidad_venta, 'SIN ASIGNAR')
     ORDER BY cantidad DESC;
   `;
 
   try {
-    const [results] = await db.query(query);
-    res.json(results);
+    const [rows] = await db.query(query);
+    const total = rows.reduce((a, r) => a + Number(r.cantidad || 0), 0);
+    res.json([...rows, { unidad_venta: 'TOTAL', cantidad: total }]);
   } catch (err) {
     console.error('Error en getCantidadEquiposPorUnidad:', err);
     res.status(500).json({ error: err.message });
   }
 };
+
+
 exports.getEquiposUnidadPorClase = async (req, res) => {
   const query = `
     SELECT 
