@@ -205,8 +205,9 @@ exports.getCantidadEquiposPorUnidad = async (req, res) => {
       COALESCE(v.unidad_venta, 'SIN ASIGNAR') AS unidad_venta,
       CAST(SUM(v.cantidad_equipos) AS UNSIGNED) AS cantidad
     FROM Vista_equipos_unidad v
-    WHERE COALESCE(TRIM(UPPER(v.clase)), '') NOT IN ('ACCESORIO','ACCESORIOS')
+    WHERE v.tipo_accesorio IS NULL        -- ⬅️ Excluye accesorios
     GROUP BY COALESCE(v.unidad_venta, 'SIN ASIGNAR')
+    HAVING cantidad > 0
     ORDER BY cantidad DESC;
   `;
 
@@ -219,6 +220,7 @@ exports.getCantidadEquiposPorUnidad = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 
 exports.getEquiposUnidadPorClase = async (req, res) => {
