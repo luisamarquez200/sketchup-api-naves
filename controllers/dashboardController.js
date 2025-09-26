@@ -1,50 +1,75 @@
 const db = require('../db/connection');
 
-// 🔧 Filtro único para ambos endpoints (ajústalo según tu regla de negocio)
-const CLASE_FILTER_EQUIPOS = "UPPER(TRIM(e.clase)) <> 'ACCESORIO'";
 
-// ✅ Definición única de “ocupado” (existe movimiento vigente con sub-ubicación)
-const OCUPADO_EXISTS = `
-  EXISTS (
-    SELECT 1
-    FROM equipo_ubicacion eu
-    WHERE eu.id_equipos = e.id_equipos
-      AND eu.fecha_salida IS NULL
-      AND eu.id_sub_ubicacion IS NOT NULL
-  )
-`;
+const SOLO_EQUIPOS_WHERE = "1=1"; 
+const WHERE_VISTA = "(tipo_accesorio IS NULL OR tipo_accesorio = '')";
 
-/**
- * GET /ocupacion-global
- * Respuesta:
- * {
- *   total, ocupadas, libres,
- *   porcentaje_ocupado, porcentaje_libre
- * }
- */
 exports.getOcupacionGlobal = async (req, res) => {
   const sql = `
     SELECT
-      COUNT(DISTINCT e.id_equipos) AS total,
-      COUNT(DISTINCT CASE WHEN ${OCUPADO_EXISTS} THEN e.id_equipos END) AS ocupadas,
-      COUNT(DISTINCT CASE WHEN NOT ${OCUPADO_EXISTS} THEN e.id_equipos END) AS libres
-    FROM equipos e
-    WHERE ${CLASE_FILTER_EQUIPOS};
+      /* Total equipos desde la vista (p.ej., 149) */
+      (SELECT 
+          SUM(COALESCE(equipos_clase_I,0) + COALESCE(equipos_clase_II,0) + COALESCE(equipos_clase_III,0))
+       FROM Vista_equipos_unidad
+       WHERE ${WHERE_VISTA}
+      ) AS equipos_total,
+
+      /* Equipos con sub_ubicación asignada (p.ej., 42) */
+      (SELECT COUNT(DISTINCT v1.id_equipo)
+         FROM Inventario v1
+        WHERE ${SOLO_EQUIPOS_WHERE}
+          AND v1.sub_ubicacion IS NOT NULL
+      ) AS equipos_en_ubicacion,
+
+      /* ---- Capacidad (sub_ubicaciones) ---- */
+      (SELECT COUNT(*)
+         FROM sub_ubicaciones s
+         JOIN ubicacion u ON u.id_ubicacion = s.id_ubicacion
+        WHERE TRIM(UPPER(u.Clase)) <> 'ACCESORIO'
+      ) AS slots_total,
+
+      (SELECT COUNT(DISTINCT v2.sub_ubicacion)
+         FROM Inventario v2
+         JOIN sub_ubicaciones s2 ON s2.id_sub_ubicacion = v2.sub_ubicacion
+         JOIN ubicacion u2 ON u2.id_ubicacion = s2.id_ubicacion
+        WHERE v2.sub_ubicacion IS NOT NULL
+          AND TRIM(UPPER(u2.Clase)) <> 'ACCESORIO'
+      ) AS slots_ocupados
   `;
 
   try {
     const [rows] = await db.query(sql);
-    const { total = 0, ocupadas = 0, libres = 0 } = rows?.[0] || {};
-    const t = Number(total) || 0;
-    const o = Number(ocupadas) || 0;
-    const l = Number(libres) || 0;
+    const r = rows?.[0] || {};
+
+    // (1) Por equipos
+    const equipos_total        = Number(r.equipos_total) || 0;        // <- 149
+    const equipos_en_ubicacion = Number(r.equipos_en_ubicacion) || 0; // <- p.ej. 42
+    const equipos_libres       = Math.max(0, equipos_total - equipos_en_ubicacion);
+    const pct_equipos_ocupado  = equipos_total ? +((equipos_en_ubicacion / equipos_total) * 100).toFixed(2) : 0;
+    const pct_equipos_libre    = equipos_total ? +((equipos_libres        / equipos_total) * 100).toFixed(2) : 0;
+
+    // (2) Por capacidad (sub_ubicaciones)
+    const slots_total    = Number(r.slots_total) || 0;
+    const slots_ocupados = Number(r.slots_ocupados) || 0;
+    const slots_libres   = Math.max(0, slots_total - slots_ocupados);
+    const pct_slots_ocup = slots_total ? +((slots_ocupados / slots_total) * 100).toFixed(2) : 0;
+    const pct_slots_lib  = slots_total ? +((slots_libres   / slots_total) * 100).toFixed(2) : 0;
 
     res.json({
-      total: t,
-      ocupadas: o,
-      libres: l,
-      porcentaje_ocupado: t ? +((o / t) * 100).toFixed(2) : 0,
-      porcentaje_libre:   t ? +((l / t) * 100).toFixed(2) : 0,
+      equipos: {
+        total: equipos_total,
+        en_ubicacion: equipos_en_ubicacion,
+        sin_ubicacion: equipos_libres,
+        porcentaje_ocupado: pct_equipos_ocupado,
+        porcentaje_libre: pct_equipos_libre
+      },
+      sub_ubicaciones: {
+        total: slots_total,
+        ocupadas: slots_ocupados,
+        libres: slots_libres,
+        porcentaje_ocupado: pct_slots_ocup,
+        porcentaje_libre: pct_slots_lib
+      }
     });
   } catch (err) {
     console.error("Error en getOcupacionGlobal:", err);
@@ -52,74 +77,64 @@ exports.getOcupacionGlobal = async (req, res) => {
   }
 };
 
-/**
- * GET /ocupacion-por-clase
- * Respuesta:
- * [
- *   { clase, total, ocupadas, disponibles, porcentaje_ocupacion, participacion },
- *   ...,
- *   { clase: 'TOTAL', ... }
- * ]
- */
 exports.getOcupacionPorClase = async (req, res) => {
   const sql = `
+    /* Totales por clase desde la vista */
+    WITH tot AS (
+      SELECT 'Clase I'  AS clase, SUM(COALESCE(equipos_clase_I,  0)) AS total
+      FROM Vista_equipos_unidad WHERE ${WHERE_VISTA}
+      UNION ALL
+      SELECT 'Clase II' AS clase, SUM(COALESCE(equipos_clase_II, 0)) AS total
+      FROM Vista_equipos_unidad WHERE ${WHERE_VISTA}
+      UNION ALL
+      SELECT 'Clase III' AS clase, SUM(COALESCE(equipos_clase_III,0)) AS total
+      FROM Vista_equipos_unidad WHERE ${WHERE_VISTA}
+    ),
+    /* Ocupadas por clase desde Inventario (equipos en sub_ubicación) */
+    occ AS (
+      SELECT UPPER(TRIM(v.tipo)) AS clase, COUNT(DISTINCT v.id_equipo) AS ocupadas
+      FROM Inventario v
+      WHERE ${SOLO_EQUIPOS_WHERE}
+        AND v.sub_ubicacion IS NOT NULL
+      GROUP BY UPPER(TRIM(v.tipo))
+    )
     SELECT
-      COALESCE(NULLIF(UPPER(TRIM(e.clase)), ''), 'Todas las clases') AS clase,
-      COUNT(DISTINCT e.id_equipos) AS total,
-      COUNT(DISTINCT CASE WHEN ${OCUPADO_EXISTS} THEN e.id_equipos END) AS ocupadas,
-      COUNT(DISTINCT CASE WHEN NOT ${OCUPADO_EXISTS} THEN e.id_equipos END) AS disponibles
-    FROM equipos e
-    WHERE ${CLASE_FILTER_EQUIPOS}
-    GROUP BY COALESCE(NULLIF(UPPER(TRIM(e.clase)), ''), 'Todas las clases')
-    ORDER BY clase;
+      t.clase,
+      CAST(t.total AS UNSIGNED) AS total,
+      COALESCE(o.ocupadas,0) AS ocupadas,
+      GREATEST(CAST(t.total AS UNSIGNED) - COALESCE(o.ocupadas,0), 0) AS disponibles,
+      /* % participación sobre el total global (para el pie y la barra de participación) */
+      ROUND(100 * t.total / SUM(t.total) OVER (), 2) AS participacion,
+      /* % ocupación dentro de cada clase (para barras de ocupación si lo usas) */
+      ROUND(100 * COALESCE(o.ocupadas,0) / NULLIF(t.total,0), 2) AS porcentaje_ocupacion
+    FROM tot t
+    LEFT JOIN occ o ON o.clase = UPPER(t.clase)
+    ORDER BY FIELD(t.clase,'Clase I','Clase II','Clase III');
   `;
 
   try {
     const [rows] = await db.query(sql);
 
-    let total_acum = 0, ocupadas_acum = 0, disponibles_acum = 0;
+    const total_global   = rows.reduce((a, r) => a + (Number(r.total)     || 0), 0);
+    const total_ocupadas = rows.reduce((a, r) => a + (Number(r.ocupadas)  || 0), 0);
 
-    const detalle = rows.map((r) => {
-      const total = Number(r.total) || 0;
-      const ocupadas = Number(r.ocupadas) || 0;
-      const disponibles = Number(r.disponibles) || 0;
-
-      total_acum += total;
-      ocupadas_acum += ocupadas;
-      disponibles_acum += disponibles;
-
-      return {
+    res.json({
+      total_global,                
+      total_ocupadas,               
+      detalle: rows.map(r => ({
         clase: r.clase,
-        total,            // “cantidad” por clase
-        ocupadas,
-        disponibles,      // “disponibilidad” por clase
-        porcentaje_ocupacion: total ? +((ocupadas / total) * 100).toFixed(2) : 0,
-      };
+        total: Number(r.total) || 0,
+        ocupadas: Number(r.ocupadas) || 0,
+        disponibles: Number(r.disponibles) || 0,
+        participacion: Number(r.participacion) || 0,
+        porcentaje_ocupacion: Number(r.porcentaje_ocupacion) || 0
+      }))
     });
-
-    const conParticipacion = detalle.map((d) => ({
-      ...d,
-      participacion: total_acum ? +((d.total / total_acum) * 100).toFixed(2) : 0,
-    }));
-
-    conParticipacion.push({
-      clase: "TOTAL",
-      total: total_acum,
-      ocupadas: ocupadas_acum,
-      disponibles: disponibles_acum,
-      porcentaje_ocupacion: total_acum
-        ? +((ocupadas_acum / total_acum) * 100).toFixed(2)
-        : 0,
-      participacion: 100,
-    });
-
-    res.json(conParticipacion);
   } catch (err) {
     console.error("Error en getOcupacionPorClase:", err);
     res.status(500).json({ error: err.message });
   }
 };
-
 
 
 
@@ -207,24 +222,45 @@ exports.getEquiposMas18SemanasPorClase = async (req, res) => {
   }
 };
 exports.getCantidadAccesoriosPorTipo = async (req, res) => {
-  const query = `
-  SELECT 
-  tipo,
-  COUNT(*) AS cantidad
-    FROM entrada_accesorios
-    WHERE UPPER(TRIM(estado)) = 'INGRESADO'
-    GROUP BY tipo
+  const sql = `
+    WITH base AS (
+      SELECT
+        UPPER(TRIM(tipo))   AS tipo_u,
+        TRIM(tipo)          AS tipo_raw
+      FROM Inventario
+      WHERE UPPER(TRIM(estado)) = 'INGRESADO'
+        AND UPPER(TRIM(tipo)) IN ('CARGADOR','BATERIA')
+    )
+    SELECT
+      /* Normalizamos el nombre para el front */
+      CASE tipo_u
+        WHEN 'CARGADOR' THEN 'Cargador'
+        WHEN 'BATERIA'  THEN 'Batería'
+        ELSE tipo_raw
+      END AS tipo,
+      COUNT(*) AS cantidad,
+      /* participación sobre el total de accesorios ingresados */
+      ROUND(100 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM base),0), 2) AS participacion
+    FROM base
+    GROUP BY tipo_u, tipo_raw
     ORDER BY cantidad DESC;
   `;
 
   try {
-    const [results] = await db.query(query);
-    res.json(results);
+    const [rows] = await db.query(sql);
+
+    const total = rows.reduce((acc, r) => acc + (Number(r.cantidad) || 0), 0);
+
+    res.json({
+      total,          // total de accesorios (Cargador + Batería) en estado INGRESADO
+      detalle: rows   // [{ tipo: 'Cargador', cantidad: X, participacion: Y }, ...]
+    });
   } catch (err) {
     console.error('Error en getCantidadAccesoriosPorTipo:', err);
     res.status(500).json({ error: err.message });
   }
 };
+
 exports.getCantidadEquiposPorUnidad = async (req, res) => {
   const query = `
     SELECT 
