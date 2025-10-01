@@ -140,13 +140,33 @@ exports.getOcupacionPorClase = async (req, res) => {
 
 exports.getEntradasSalidasPorSemana = async (req, res) => {
   const query = `
-    SELECT 
-      YEAR(fecha_entrada) AS anio,
-      WEEK(fecha_entrada) AS semana,
-      COUNT(*) AS entradas,
-      SUM(CASE WHEN fecha_salida IS NOT NULL THEN 1 ELSE 0 END) AS salidas
-    FROM equipo_ubicacion
-    WHERE fecha_entrada >= DATE_SUB(CURDATE(), INTERVAL 4 WEEK)
+    SELECT
+      anio,
+      semana,
+      SUM(entradas) AS entradas_series,
+      SUM(salidas)  AS salidas_series
+    FROM (
+      SELECT
+        YEAR(fecha_entrada) anio,
+        WEEK(fecha_entrada, 3) semana,
+        COUNT(DISTINCT serial_equipo) AS entradas,
+        0 AS salidas
+      FROM equipo_ubicacion
+      WHERE fecha_entrada >= DATE_SUB(CURDATE(), INTERVAL 4 WEEK)
+      GROUP BY anio, semana
+
+      UNION ALL
+
+      SELECT
+        YEAR(fecha_salida) anio,
+        WEEK(fecha_salida, 3) semana,
+        0 AS entradas,
+        COUNT(DISTINCT serial_equipo) AS salidas
+      FROM equipo_ubicacion
+      WHERE fecha_salida IS NOT NULL
+        AND fecha_salida >= DATE_SUB(CURDATE(), INTERVAL 4 WEEK)
+      GROUP BY anio, semana
+    ) t
     GROUP BY anio, semana
     ORDER BY anio DESC, semana DESC
   `;
@@ -159,6 +179,7 @@ exports.getEntradasSalidasPorSemana = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 exports.getEquiposMas12SemanasPorClase = async (req, res) => {
   const query = `
     SELECT 
