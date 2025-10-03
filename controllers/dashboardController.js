@@ -137,48 +137,75 @@ exports.getOcupacionPorClase = async (req, res) => {
 };
 
 
-
+// GET /api/series/entradas-salidas-semanal?weeks=12
 exports.getEntradasSalidasPorSemana = async (req, res) => {
-  const query = `
-    SELECT
-      anio,
-      semana,
-      SUM(entradas) AS entradas_series,
-      SUM(salidas)  AS salidas_series
-    FROM (
-      SELECT
-        YEAR(fecha_entrada) anio,
-        WEEK(fecha_entrada, 3) semana,
-        COUNT(DISTINCT serial_equipo) AS entradas,
-        0 AS salidas
-      FROM equipo_ubicacion
-      WHERE fecha_entrada >= DATE_SUB(CURDATE(), INTERVAL 4 WEEK)
-      GROUP BY anio, semana
-
-      UNION ALL
-
-      SELECT
-        YEAR(fecha_salida) anio,
-        WEEK(fecha_salida, 3) semana,
-        0 AS entradas,
-        COUNT(DISTINCT serial_equipo) AS salidas
-      FROM equipo_ubicacion
-      WHERE fecha_salida IS NOT NULL
-        AND fecha_salida >= DATE_SUB(CURDATE(), INTERVAL 4 WEEK)
-      GROUP BY anio, semana
-    ) t
-    GROUP BY anio, semana
-    ORDER BY anio DESC, semana DESC
-  `;
+  const weeksBack = Number(req.query.weeks ?? 12);
 
   try {
-    const [results] = await db.query(query);
-    res.json(results);
+    // 1) Descubrir la columna de fecha en `salidas`
+    const [cols] = await db.query(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME   = 'salidas'
+        AND COLUMN_NAME IN ('fecha', 'fecha_salida', 'fecha_creacion', 'created_at', 'f_salida')
+      LIMIT 1
+    `);
+
+    if (!cols.length) {
+      return res.status(400).json({
+        error:
+          "No se encontró una columna de fecha en la tabla 'salidas'. Revisa el nombre (ej: fecha_salida, created_at).",
+      });
+    }
+
+    const fechaSalidasCol = cols[0].COLUMN_NAME; // p.ej. 'fecha_salida'
+
+    // 2) Query sin CTEs, solo con tus tablas existentes
+    const sql = `
+      SELECT
+        anio,
+        semana,
+        SUM(entradas) AS entradas_series,
+        SUM(salidas)  AS salidas_series
+      FROM (
+        /* ENTRADAS: usa entrada_detalle.fecha y serial_equipo */
+        SELECT
+          YEAR(ed.fecha)                AS anio,
+          WEEK(ed.fecha, 3)             AS semana,
+          COUNT(DISTINCT ed.serial_equipo) AS entradas,
+          0 AS salidas
+        FROM entrada_detalle ed
+        WHERE ed.fecha >= DATE_SUB(CURDATE(), INTERVAL ? WEEK)
+        GROUP BY anio, semana
+
+        UNION ALL
+
+        /* SALIDAS: une salida_detalle con salidas y toma la fecha detectada */
+        SELECT
+          YEAR(s.${fechaSalidasCol})    AS anio,
+          WEEK(s.${fechaSalidasCol}, 3) AS semana,
+          0 AS entradas,
+          COUNT(DISTINCT sd.serial_equipos) AS salidas
+        FROM salida_detalle sd
+        JOIN salidas s ON s.id_salida = sd.id_salida
+        WHERE s.${fechaSalidasCol} >= DATE_SUB(CURDATE(), INTERVAL ? WEEK)
+        GROUP BY anio, semana
+      ) t
+      GROUP BY anio, semana
+      ORDER BY anio ASC, semana ASC;
+    `;
+
+    const [rows] = await db.query(sql, [weeksBack, weeksBack]);
+    res.json(rows);
   } catch (err) {
-    console.error('Error en getEntradasSalidasPorSemana:', err);
+    console.error("Error en getEntradasSalidasPorSemana:", err);
     res.status(500).json({ error: err.message });
   }
 };
+
+
+
 
 exports.getEquiposMas12SemanasPorClase = async (req, res) => {
   const query = `
